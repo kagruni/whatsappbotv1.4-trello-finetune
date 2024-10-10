@@ -9,6 +9,7 @@ const csv = require('csv-parser');
 const path = require('path');
 const Trello = require('trello-node-api');
 const trello = new Trello(process.env.TRELLO_API_KEY, process.env.TRELLO_TOKEN);
+const cron = require('node-cron');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY // This key should be in your .env file
@@ -48,14 +49,14 @@ function updateAndDisplayStats() {
 const server = app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
   console.log('Configuration loaded:', 
-     updateAndDisplayStats(),
+    updateAndDisplayStats(),
     {
-    openaiApiKey: config.openaiApiKey ? 'Set' : 'Not set',
-    whatsappToken: config.whatsappToken ? 'Set' : 'Not set',
-    whatsappPhoneNumberId: config.whatsappPhoneNumberId,
-    whatsappVerifyToken: config.whatsappVerifyToken
-  
-  });
+      openaiApiKey: config.openaiApiKey ? 'Set' : 'Not set',
+      whatsappToken: config.whatsappToken ? 'Set' : 'Not set',
+      whatsappPhoneNumberId: config.whatsappPhoneNumberId,
+      whatsappVerifyToken: config.whatsappVerifyToken
+    }
+  );
   try {
     // Load leads from CSV
     leads = await loadLeadsFromCSV('../leads.csv');
@@ -65,8 +66,11 @@ const server = app.listen(PORT, async () => {
       console.log(`Loaded ${leads.length} leads from CSV`);
     }
 
-    // Start conversation initiation process
+    // Start initial conversation initiation process
     await initiateConversations();
+
+    // Schedule future conversation initiations
+    scheduleConversationInitiation();
   } catch (error) {
     console.error('Error during startup:', error);
   }
@@ -733,6 +737,58 @@ if (require.main === module) {
   })();
 }
 
+function scheduleConversationInitiation() {
+  // Schedule the next run 24 hours from now
+  const nextRun = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  
+  console.log(`Next conversation initiation scheduled for: ${nextRun.toISOString()}`);
 
+  setTimeout(async () => {
+    console.log('Starting scheduled conversation initiation');
+    try {
+      // Load leads from CSV
+      leads = await loadLeadsFromCSV('../leads.csv');
+      if (leads.length === 0) {
+        console.warn('No valid, uncontacted leads found in CSV. Check the file format and content.');
+      } else {
+        console.log(`Loaded ${leads.length} leads from CSV`);
+      }
 
+      // Reset conversation counters
+      initiatedConversationCount = 0;
+      deliveredConversationCount = 0;
+      pendingDeliveryCount = 0;
+      failedDeliveryCount = 0;
 
+      // Start conversation initiation process
+      await initiateConversations();
+
+      // Schedule the next run
+      scheduleConversationInitiation();
+    } catch (error) {
+      console.error('Error during scheduled conversation initiation:', error);
+      // Attempt to reschedule even if there was an error
+      scheduleConversationInitiation();
+    }
+  }, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+}
+
+function updateStats(initiated = 0, delivered = 0, pending = 0, failed = 0) {
+  initiatedConversationCount = Math.max(0, initiatedConversationCount + initiated);
+  deliveredConversationCount = Math.max(0, deliveredConversationCount + delivered);
+  pendingDeliveryCount = Math.max(0, pendingDeliveryCount + pending);
+  failedDeliveryCount = Math.max(0, failedDeliveryCount + failed);
+
+  // Ensure consistency
+  if (deliveredConversationCount > initiatedConversationCount) {
+    console.warn('Warning: More deliveries than initiations. Adjusting...');
+    deliveredConversationCount = initiatedConversationCount;
+  }
+
+  console.log('Updated stats:', {
+    initiated: initiatedConversationCount,
+    delivered: deliveredConversationCount,
+    pending: pendingDeliveryCount,
+    failed: failedDeliveryCount
+  });
+}
