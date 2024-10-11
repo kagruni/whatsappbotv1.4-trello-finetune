@@ -31,28 +31,20 @@ let pendingDeliveryCount = 0;
 let failedDeliveryCount = 0;
 let totalInitiatedConversations = 0;
 
-function updateAndDisplayStats() {
-  // Clear the console
-  console.clear();
-  
-  // Display the statistics
-  console.log('==== Conversation Statistics ====');
-  console.log(`Total Initiated: ${initiatedConversationCount}`);
+function printConversationStatistics() {
+  console.log('\n==== Conversation Statistics ====');
+  console.log(`Total Initiated: ${totalInitiatedConversations}`);
   console.log(`Delivered: ${deliveredConversationCount}`);
   console.log(`Pending Deliveries: ${pendingDeliveryCount}`);
   console.log(`Failed Deliveries: ${failedDeliveryCount}`);
-  console.log('==================================');
-  
-  // Schedule the next update
-  setTimeout(updateAndDisplayStats, 5000); // Update every 5 seconds
+  console.log('==================================\n');
 }
-
 
 // ... (keep your existing imports and configurations)
 const server = app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
   console.log('Configuration loaded:', 
-    updateAndDisplayStats(),
+    printConversationStatistics(),
     {
       openaiApiKey: config.openaiApiKey ? 'Set' : 'Not set',
       whatsappToken: config.whatsappToken ? 'Set' : 'Not set',
@@ -247,13 +239,13 @@ async function initiateBatch(batch) {
       lead.messageId = messageId;
       lead.deliveryStatus = 'pending';
       totalInitiatedConversations++;
-      pendingDeliveries++;
+      pendingDeliveryCount++;
 
       console.log(`Initiated conversation with ${lead.name} (${lead.phone}). MessageId: ${messageId}`);
     } catch (error) {
       console.error(`Failed to send message to ${lead.name} (${lead.phone}):`, error.message);
       lead.deliveryStatus = 'failed';
-      pendingDeliveryCount--;
+      failedDeliveryCount++;
     }
   });
 
@@ -580,24 +572,14 @@ function handleMessageStatus(status) {
   const lead = leads.find(l => l.messageId === id);
   if (lead) {
     lead.deliveryStatus = messageStatus;
-  if (status.status === 'failed') {
-    pendingDeliveryCount--;
-    failedDeliveryCount++;
-  } else if (status.status === 'delivered') {
-    deliveredConversationCount++;
-    pendingDeliveryCount--;
-  }
-    if (messageStatus === 'sent') {
-      console.log(`Message sent to ${lead.name} (${lead.phone}).`);
-    } else if (messageStatus === 'delivered') {
+    if (messageStatus === 'delivered') {
       deliveredConversationCount++;
       pendingDeliveryCount--;
       markLeadAsContacted(lead.phone);
       console.log(`Message delivered to ${lead.name} (${lead.phone}). Total delivered: ${deliveredConversationCount}`);
-    } else if (messageStatus === 'read') {
-      console.log(`Message read by ${lead.name} (${lead.phone}).`);
     } else if (messageStatus === 'failed') {
       pendingDeliveryCount--;
+      failedDeliveryCount++;
       console.log(`Message failed to deliver to ${lead.name} (${lead.phone}).`);
     }
   }
