@@ -250,6 +250,9 @@ async function initiateBatch(batch) {
   });
 
   await Promise.all(promises);
+  
+  // Print statistics after processing the batch
+  printConversationStatistics();
 }
 
 function waitForPendingDeliveries() {
@@ -582,6 +585,9 @@ function handleMessageStatus(status) {
       failedDeliveryCount++;
       console.log(`Message failed to deliver to ${lead.name} (${lead.phone}).`);
     }
+    
+    // Print updated statistics after each status change
+    printConversationStatistics();
   }
 }
 
