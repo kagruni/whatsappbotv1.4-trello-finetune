@@ -29,6 +29,7 @@ let initiatedConversationCount = 0;
 let deliveredConversationCount = 0;
 let pendingDeliveryCount = 0;
 let failedDeliveryCount = 0;
+let totalInitiatedConversations = 0;
 
 function updateAndDisplayStats() {
   // Clear the console
@@ -245,8 +246,8 @@ async function initiateBatch(batch) {
 
       lead.messageId = messageId;
       lead.deliveryStatus = 'pending';
-      totalInitiatedConversations += batch.length;
-      pendingDeliveries += batch.length;
+      totalInitiatedConversations++;
+      pendingDeliveries++;
 
       console.log(`Initiated conversation with ${lead.name} (${lead.phone}). MessageId: ${messageId}`);
     } catch (error) {
