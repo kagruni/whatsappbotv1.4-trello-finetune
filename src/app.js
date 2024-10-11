@@ -10,6 +10,8 @@ const path = require('path');
 const Trello = require('trello-node-api');
 const trello = new Trello(process.env.TRELLO_API_KEY, process.env.TRELLO_TOKEN);
 const cron = require('node-cron');
+const { exec } = require('child_process');
+const crypto = require('crypto');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY // This key should be in your .env file
@@ -790,5 +792,124 @@ function updateStats(initiated = 0, delivered = 0, pending = 0, failed = 0) {
     delivered: deliveredConversationCount,
     pending: pendingDeliveryCount,
     failed: failedDeliveryCount
+  });
+}
+
+// Function to update lead_status.json on GitHub
+async function updateLeadStatusOnGitHub() {
+  try {
+    const leadStatusPath = path.join(__dirname, 'lead_status.json');
+    
+    // Stage the changes
+    await executeCommand('git add ' + leadStatusPath);
+    
+    // Commit the changes
+    const timestamp = new Date().toISOString();
+    await executeCommand(`git commit -m "Update lead_status.json - ${timestamp}"`);
+    
+    // Push the changes
+    await executeCommand('git push origin main');
+    
+    console.log('Successfully updated lead_status.json on GitHub');
+  } catch (error) {
+    console.error('Error updating lead_status.json on GitHub:', error);
+  }
+}
+
+// Helper function to execute shell commands
+function executeCommand(command) {
+  return new Promise((resolve, reject) => {
+    exec(command, { cwd: process.cwd() }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error executing command: ${command}`);
+        console.error(`stderr: ${stderr}`);
+        reject(error);
+      } else {
+        console.log(`stdout: ${stdout}`);
+        resolve(stdout);
+      }
+    });
+  });
+}
+
+// Schedule daily tasks
+cron.schedule('0 0 * * *', async () => {  // Runs at midnight every day
+  console.log('Starting daily tasks...');
+  
+  try {
+    // Pull latest changes from GitHub
+    await executeCommand('git pull origin main');
+    console.log('Successfully pulled latest changes from GitHub');
+    
+    // Update lead_status.json on GitHub
+    await updateLeadStatusOnGitHub();
+    
+    // Initiate new conversations
+    await initiateConversations();
+    
+    console.log('Daily tasks completed successfully');
+  } catch (error) {
+    console.error('Error during daily tasks:', error);
+  }
+});
+
+// Assume this is part of your Express app setup
+app.post('/github-webhook', (req, res) => {
+  const signature = req.headers['x-hub-signature'];
+  const payload = JSON.stringify(req.body);
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+
+  const hmac = crypto.createHmac('sha1', secret);
+  const digest = 'sha1=' + hmac.update(payload).digest('hex');
+
+  if (signature === digest) {
+    // Log the update attempt
+    logMessage('Update attempt initiated');
+
+    exec('git pull && npm install', { cwd: process.cwd() }, (error, stdout, stderr) => {
+      if (error) {
+        logMessage(`Error during update: ${error.message}`, 'error');
+        return res.status(500).send('Error occurred while updating');
+      }
+
+      logMessage(`Git pull and npm install output: ${stdout}`);
+      if (stderr) {
+        logMessage(`stderr: ${stderr}`, 'warn');
+      }
+
+      // Check if we need to restart the app
+      if (stdout.includes('Already up to date.')) {
+        logMessage('No updates available, app continues running');
+        return res.status(200).send('No updates available');
+      } else {
+        logMessage('Updates found, restarting app with PM2');
+        exec('pm2 reload app', (pmError, pmStdout, pmStderr) => {
+          if (pmError) {
+            logMessage(`Error restarting app: ${pmError.message}`, 'error');
+            return res.status(500).send('Error occurred while restarting the app');
+          }
+          logMessage(`PM2 restart output: ${pmStdout}`);
+          if (pmStderr) {
+            logMessage(`PM2 stderr: ${pmStderr}`, 'warn');
+          }
+          res.status(200).send('Update successful and app restarted');
+        });
+      }
+    });
+  } else {
+    logMessage('Invalid signature received', 'warn');
+    res.status(403).send('Invalid signature');
+  }
+});
+
+// Helper function for logging
+function logMessage(message, level = 'info') {
+  const timestamp = new Date().toISOString();
+  const logEntry = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
+  
+  console[level](message);
+  
+  fs.appendFile(path.join(__dirname, 'update.log'), logEntry, (err) => {
+    if (err) console.error('Error writing to log file:', err);
   });
 }
