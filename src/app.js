@@ -118,17 +118,16 @@ function saveLeadStatus(status) {
   }
 }
 
-async function markLeadAsContacted(phone, status = 'contacted') {
+function markLeadAsContacted(phone, status = 'contacted') {
   const phoneNumber = phone.replace(/\D/g, '');
   let currentStatus;
   try {
-    currentStatus = await loadLeadStatus();
+    currentStatus = JSON.parse(fs.readFileSync(STATUS_FILE_PATH, 'utf8'));
   } catch (error) {
     console.error('Error loading lead_status.json:', error);
     currentStatus = {};
   }
 
-  // Only update if the number doesn't exist or if it's not already marked as contacted
   if (!currentStatus[phoneNumber] || !currentStatus[phoneNumber].contacted) {
     currentStatus[phoneNumber] = {
       contacted: true,
@@ -136,13 +135,13 @@ async function markLeadAsContacted(phone, status = 'contacted') {
       status: status
     };
 
-    try {
-      await fs.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2));
-      console.log(`Updated local status for ${phoneNumber}: ${status}`);
-      // Remove the call to updateLeadStatusOnGitHub()
-    } catch (error) {
-      console.error('Error updating local lead_status.json:', error);
-    }
+    fs.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2), (err) => {
+      if (err) {
+        console.error('Error updating local lead_status.json:', err);
+      } else {
+        console.log(`Updated local status for ${phoneNumber}: ${status}`);
+      }
+    });
   } else {
     console.log(`Skipped update for ${phoneNumber}: already contacted`);
   }
