@@ -120,12 +120,14 @@ function saveLeadStatus(status) {
 
 function markLeadAsContacted(phone, status = 'contacted') {
   const phoneNumber = phone.replace(/\D/g, '');
-  let currentStatus;
+  let currentStatus = {};
+
   try {
-    currentStatus = JSON.parse(fs.readFileSync(STATUS_FILE_PATH, 'utf8'));
+    const fileContent = fs.readFileSync(STATUS_FILE_PATH, 'utf8');
+    currentStatus = JSON.parse(fileContent);
   } catch (error) {
-    console.error('Error loading lead_status.json:', error);
-    currentStatus = {};
+    console.error('Error reading lead_status.json:', error);
+    // If there's an error reading the file, we'll start with an empty object
   }
 
   if (!currentStatus[phoneNumber] || !currentStatus[phoneNumber].contacted) {
@@ -135,13 +137,8 @@ function markLeadAsContacted(phone, status = 'contacted') {
       status: status
     };
 
-    fs.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2), (err) => {
-      if (err) {
-        console.error('Error updating local lead_status.json:', err);
-      } else {
-        console.log(`Updated local status for ${phoneNumber}: ${status}`);
-      }
-    });
+    fs.writeFileSync(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2));
+    console.log(`Updated local status for ${phoneNumber}: ${status}`);
   } else {
     console.log(`Skipped update for ${phoneNumber}: already contacted`);
   }
