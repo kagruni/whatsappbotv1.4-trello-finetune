@@ -120,19 +120,31 @@ function saveLeadStatus(status) {
 
 async function markLeadAsContacted(phone, status = 'contacted') {
   const phoneNumber = phone.replace(/\D/g, '');
-  const currentStatus = await loadLeadStatus();
-  currentStatus[phoneNumber] = {
-    contacted: true,
-    timestamp: new Date().toISOString(),
-    status: status
-  };
-
+  let currentStatus;
   try {
-    await fsPromises.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2));
-    console.log(`Updated status for ${phoneNumber}: ${status}`);
-    await updateLeadStatusOnGitHub();
+    currentStatus = await loadLeadStatus();
   } catch (error) {
-    console.error('Error updating lead_status.json:', error);
+    console.error('Error loading lead_status.json:', error);
+    currentStatus = {};
+  }
+
+  // Only update if the number doesn't exist or if it's not already marked as contacted
+  if (!currentStatus[phoneNumber] || !currentStatus[phoneNumber].contacted) {
+    currentStatus[phoneNumber] = {
+      contacted: true,
+      timestamp: new Date().toISOString(),
+      status: status
+    };
+
+    try {
+      await fs.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2));
+      console.log(`Updated local status for ${phoneNumber}: ${status}`);
+      // Remove the call to updateLeadStatusOnGitHub()
+    } catch (error) {
+      console.error('Error updating local lead_status.json:', error);
+    }
+  } else {
+    console.log(`Skipped update for ${phoneNumber}: already contacted`);
   }
 }
 
@@ -802,19 +814,11 @@ function updateStats(initiated = 0, delivered = 0, pending = 0, failed = 0) {
 
 // Function to update lead_status.json on GitHub
 async function updateLeadStatusOnGitHub() {
+  const STATUS_FILE_PATH = path.join(__dirname, '..', 'lead_status.json');
   try {
-    const leadStatusPath = path.join(__dirname, 'lead_status.json');
-    
-    // Stage the changes
-    await executeCommand('git add ' + leadStatusPath);
-    
-    // Commit the changes
-    const timestamp = new Date().toISOString();
-    await executeCommand(`git commit -m "Update lead_status.json - ${timestamp}"`);
-    
-    // Push the changes
-    await executeCommand('git push origin main');
-    
+    await execPromise(`git add ${STATUS_FILE_PATH}`);
+    await execPromise('git commit -m "Update lead status"');
+    await execPromise('git push origin main');
     console.log('Successfully updated lead_status.json on GitHub');
   } catch (error) {
     console.error('Error updating lead_status.json on GitHub:', error);
