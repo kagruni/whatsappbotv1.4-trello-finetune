@@ -117,20 +117,22 @@ function saveLeadStatus(status) {
   }
 }
 
-function markLeadAsContacted(phone) {
-  const statusFilePath = path.join(__dirname, '..', 'lead_status.json');
-  let status = {};
-  
-  if (fs.existsSync(statusFilePath)) {
-    const data = fs.readFileSync(statusFilePath, 'utf8');
-    status = JSON.parse(data || '{}');
-  }
+async function markLeadAsContacted(phone, status = 'contacted') {
+  const phoneNumber = phone.replace(/\D/g, '');
+  const currentStatus = await loadLeadStatus();
+  currentStatus[phoneNumber] = {
+    contacted: true,
+    timestamp: new Date().toISOString(),
+    status: status
+  };
 
-  status[phone] = { contacted: true, timestamp: new Date().toISOString() };
-  
-  fs.writeFileSync(statusFilePath, JSON.stringify(status, null, 2));
-  console.log(`Marked lead ${phone} as contacted`);
-  console.log('Updated lead status:', status);
+  try {
+    await fs.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2));
+    console.log(`Updated status for ${phoneNumber}: ${status}`);
+    await updateLeadStatusOnGitHub();
+  } catch (error) {
+    console.error('Error updating lead_status.json:', error);
+  }
 }
 
 
@@ -226,9 +228,14 @@ async function initiateConversations() {
 async function initiateBatch(batch) {
   const promises = batch.map(async (lead) => {
     try {
-      console.log(`Attempting to send message to ${lead.name} (${lead.phone})`);
+      const phoneNumber = lead.phone.replace(/\D/g, '');
+      console.log(`Attempting to send message to ${lead.name} (${phoneNumber})`);
 
-      const messageId = await sendWhatsAppTemplateMessage(lead.phone, [
+      // Mark as contacted before sending the message
+      await markLeadAsContacted(phoneNumber, 'initiated');
+      console.log(`Marked ${lead.name} (${phoneNumber}) as contacted (initiated)`);
+
+      const messageId = await sendWhatsAppTemplateMessage(phoneNumber, [
         {
           type: 'body',
           parameters: [
@@ -239,20 +246,27 @@ async function initiateBatch(batch) {
 
       lead.messageId = messageId;
       lead.deliveryStatus = 'pending';
-      totalInitiatedConversations++;
       pendingDeliveryCount++;
 
-      console.log(`Initiated conversation with ${lead.name} (${lead.phone}). MessageId: ${messageId}`);
+      console.log(`Initiated conversation with ${lead.name} (${phoneNumber}). MessageId: ${messageId}`);
+
+      // Update status to 'sent' after successful message send
+      await markLeadAsContacted(phoneNumber, 'sent');
+      console.log(`Updated ${lead.name} (${phoneNumber}) status to sent`);
+
     } catch (error) {
       console.error(`Failed to send message to ${lead.name} (${lead.phone}):`, error.message);
       lead.deliveryStatus = 'failed';
       failedDeliveryCount++;
+      
+      // Even if sending fails, the lead is still marked as contacted
+      await markLeadAsContacted(lead.phone, 'failed');
+      console.log(`Updated ${lead.name} (${lead.phone}) status to failed`);
     }
   });
 
   await Promise.all(promises);
   
-  // Print statistics after processing the batch
   printConversationStatistics();
 }
 
