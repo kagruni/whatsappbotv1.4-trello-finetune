@@ -5,6 +5,7 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const config = require('./config');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const csv = require('csv-parser');
 const path = require('path');
 const Trello = require('trello-node-api');
@@ -127,7 +128,7 @@ async function markLeadAsContacted(phone, status = 'contacted') {
   };
 
   try {
-    await fs.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2));
+    await fsPromises.writeFile(STATUS_FILE_PATH, JSON.stringify(currentStatus, null, 2));
     console.log(`Updated status for ${phoneNumber}: ${status}`);
     await updateLeadStatusOnGitHub();
   } catch (error) {
